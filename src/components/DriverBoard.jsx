@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
 import { db, auth } from "../firebaseConfig";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import { useAuth } from "../context/AuthContext";
@@ -87,7 +86,7 @@ const DriverBoard = () => {
     return (
         <div className="min-h-screen bg-none bg-transparent relative flex flex-col items-center justify-center p-6">
             {/* Top-right location display with sliding animation */}
-            <div className="absolute top-4 right-4 h-12 w-72 md:w-auto text-slate-500 bg-gray-200 p-3 rounded-lg shadow-md text-sm md:text-base overflow-hidden">
+            <div className="absolute top-4 right-4 h-12 w-60 md:w-auto text-slate-500 bg-gray-200 p-3 rounded-lg shadow-md text-sm md:text-base overflow-hidden">
                 {currentLocation ? (
                     <div className="w-full overflow-hidden">
                         <div
