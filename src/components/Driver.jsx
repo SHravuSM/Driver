@@ -163,7 +163,7 @@ export default function Driver() {
                                         <p><strong>Passenger Name:</strong> {request.passengerName || "Unknown"}</p>
                                         <p><strong>Passenger Location:</strong> {request.passengerLocation?.locationName || "Unknown"}</p>
                                         {distance && (
-                                            <p><strong>Distance:</strong> {distance} km</p>
+                                            <p><strong>Distance:</strong> {distance} km away</p>
                                         )}
                                         <button
                                             onClick={() => handleRequest(request.id, "accepted")}
