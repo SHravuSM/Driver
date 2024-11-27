@@ -1,164 +1,192 @@
-import React, { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
-import { db, auth } from "../firebaseConfig";
-import { doc, updateDoc } from "firebase/firestore";
-import { useAuth } from "../context/AuthContext";
+import React, { useEffect, useState } from 'react';
+import DriverBoard from './DriverBoard';
+import { collection, doc, onSnapshot, updateDoc } from 'firebase/firestore';
+import { db } from '../firebaseConfig';
+import { useAuth } from '../context/AuthContext';
 
-const Driver = () => {
-    const [driver, setDriver] = useState(null);
-    const [loc, setLoc] = useState(null);
-    const [rideStatus, setRideStatus] = useState("Waiting for ride...");
-    const [currentLocation, setCurrentLocation] = useState(null);
-    const { SignOut } = useAuth()
-    const Navigate = useNavigate();
+const calculateDistance = (lat1, lng1, lat2, lng2) => {
+    const toRad = (value) => (value * Math.PI) / 180;
+    const earthRadius = 6371; // Radius of the Earth in kilometers
 
-    // Get the current driver details from Firestore
-    // useEffect(() => {
-    //     const fetchDriverDetails = async () => {
-    //         const driverRef = doc(db, "drivers", auth.currentUser.uid);
-    //         const driverDoc = await getDoc(driverRef);
-    //         if (driverDoc.exists()) {
-    //             setDriver(driverDoc.data());
-    //         } else {
-    //             console.log("No such document!");
-    //         }
-    //     };
+    const dLat = toRad(lat2 - lat1);
+    const dLng = toRad(lng2 - lng1);
 
-    //     if (auth.currentUser) {
-    //         fetchDriverDetails();
-    //     }
-    // }, []);
+    const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(toRad(lat1)) *
+        Math.cos(toRad(lat2)) *
+        Math.sin(dLng / 2) *
+        Math.sin(dLng / 2);
 
-    const reverseGeocode = async (latitude, longitude) => {
-        const url = `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json`;
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 
-        try {
-            const response = await fetch(url);
-            const data = await response.json();
+    return earthRadius * c; // Distance in kilometers
+};
 
-            // Check if the request is successful and results are found
-            if (data.error) {
-                console.error("Error with Nominatim API:", data.error);
-            } else {
-                // Display the location name
-                const locationName = data.display_name;
-                setLoc(locationName)
-                console.log("Location Name:", locationName);
-            }
-        } catch (error) {
-            console.error("Error fetching location data:", error);
-        }
-    };
-
+export default function Driver() {
+    const [isMenuOpen, setIsMenuOpen] = useState(false); // State to control the menu toggle
+    const [rideRequests, setRideRequests] = useState([]);
+    const [driverLocation, setDriverLocation] = useState(null);
+    const { user } = useAuth();
+    const driverId = user?.uid; // Replace with the logged-in driver's ID
 
     useEffect(() => {
-        let watchId;
-        if (navigator.geolocation) {
-            watchId = navigator.geolocation.watchPosition(
-                (position) => {
-                    console.log(position);
-                    console.log(position.coords.latitude);
-                    reverseGeocode(position.coords.latitude, position.coords.longitude)
-                    console.log(position.coords.longitude);
+        // Real-time listener for ride requests for this driver
+        const unsubscribe = onSnapshot(
+            collection(db, "rideRequests"),
+            (snapshot) => {
+                const requests = snapshot.docs
+                    .map((doc) => ({ id: doc.id, ...doc.data() }))
+                    .filter((request) => request.driverId === driverId && request.status === "pending");
 
-                    const newLocation = {
-                        lat: position.coords.latitude,
-                        lng: position.coords.longitude,
-                    };
-                    setCurrentLocation(newLocation);
+                setRideRequests(requests);
+            }
+        );
 
-                    // Update Firestore with the new location
-                    const updateLocation = async () => {
-                        if (auth.currentUser) {
-                            const driverRef = doc(db, "drivers", auth.currentUser.uid);
-                            await updateDoc(driverRef, { location: newLocation });
-                        }
-                    };
-                    updateLocation();
-                },
-                (error) => console.error("Error fetching location:", error),
-                { enableHighAccuracy: true }
-            );
-        }
+        return () => unsubscribe();
+    }, [driverId]);
+
+    useEffect(() => {
+        const watchId = navigator.geolocation.watchPosition(
+            (position) => {
+                const { latitude, longitude } = position.coords;
+                setDriverLocation({ lat: latitude, lng: longitude });
+            },
+            (error) => console.error("Error fetching location:", error),
+            { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 }
+        );
 
         return () => {
-            if (watchId) navigator.geolocation.clearWatch(watchId);
+            navigator.geolocation.clearWatch(watchId);
         };
     }, []);
 
+    const handleRequest = async (requestId, status) => {
+        try {
+            const requestDoc = doc(db, "rideRequests", requestId);
+            await updateDoc(requestDoc, { status });
 
-    const handleAcceptRide = () => {
-        setRideStatus("On the way...");
-        // You could update ride status in Firestore and navigate to the ride details page
-        console.log("Ride Accepted!");
+            alert(`Request ${status === "accepted" ? "accepted" : "rejected"}`);
+        } catch (error) {
+            console.error("Error updating request status:", error);
+        }
     };
 
-    const handleEndRide = () => {
-        setRideStatus("Ride Completed!");
-        // Here we would update the ride status to 'completed' in Firestore
-        console.log("Ride Completed!");
+    // Toggle the menu state
+    const toggleMenu = () => {
+        setIsMenuOpen(!isMenuOpen);
     };
-
 
     return (
-        <div className="min-h-screen bg-gray-100 flex flex-col items-center justify-center p-6">
-            <div className="bg-white p-8 rounded-lg shadow-lg w-full max-w-lg">
-                <h1 className="text-3xl font-bold text-center text-gray-700">Driver Dashboard</h1>
-                <p className="text-gray-600 mt-1">
-                    Location: {currentLocation ? `${currentLocation.lat.toFixed(4)}, ${currentLocation.lng.toFixed(4)}` : "Fetching..."}
-                </p>
-                <p>{loc}</p>
-                {/* Driver Info Section */}
-                <div className="mt-8">
-                    {driver ? (
-                        <div>
-                            <p className="text-xl font-semibold text-gray-800">Hello, {driver.name}!</p>
-                            <p className="text-gray-600 mt-2">
-                                Vehicle Type: {driver.vehicleType}
-                            </p>
-                            <p className="text-gray-600 mt-1">
-                                Location: {currentLocation ? `${currentLocation.lat.toFixed(4)}, ${currentLocation.lng.toFixed(4)}` : "Fetching..."}
-                            </p>
-                        </div>
+        <div className="relative">
+            {/* Navbar */}
+            <nav className="bg-white text-white p-4 shadow-md">
+                <div className="flex items-center justify-between">
+
+                    {/* Hamburger Icon for Mobile */}
+                    <div
+                        id="hamburger"
+                        onClick={toggleMenu}
+                        className={`md:hidden cursor-pointer z-20 transition-transform duration-300 ease-in-out ${isMenuOpen ? ' m-2 scale-100' : ' shadow-[1px_1px_1px_red] p-2 rounded-lg scale-100'}`}
+                    >
+                        <div
+                            className={`w-8 h-1 bg-red-500 mb-2 transition-transform duration-300 rounded-md ease-in-out ${isMenuOpen ? '-rotate-45 bg-orange-400 w-4 translate-y-[7px] ' : ''}`}
+                        ></div>
+                        <div
+                            className={`w-8 h-1 bg-slate-200 mb-2 transition-opacity duration-300 rounded-md ease-in-out ${isMenuOpen ? 'ml-1 bg-blue-500 rotate-1 w-7 ' : ''}`}
+                        ></div>
+                        <div
+                            className={`w-8 h-1 bg-green-800 transition-transform duration-300 rounded-md ease-in-out ${isMenuOpen ? 'rotate-45 bg-red-500 w-4 -translate-y-[7px]' : ''}`}
+                        ></div>
+                    </div>
+
+                    {/* Logo */}
+                    <div className="text-xl font-semibold">Vihar Driver</div>
+
+                </div>
+
+                {/* Mobile Menu */}
+                <div
+                    className={`absolute top-0 left-0 w-full bg-white transform ${isMenuOpen ? 'translate-x-0' : '-translate-x-full'} transition-transform duration-200 ease-in-out md:hidden`}
+                >
+                    <DriverBoard />
+                </div>
+            </nav>
+
+            {/* Main Content */}
+            <div className="p-6 space-y-6">
+                {/* Hero Section */}
+                <div className="bg-gradient-to-r from-blue-500 to-teal-400 p-8 rounded-lg shadow-lg text-white text-center">
+                    <h1 className="text-3xl font-semibold">Welcome to the Driver Page</h1>
+                    <p className="text-xl mt-2">Manage your rides and monitor your performance effortlessly</p>
+                </div>
+
+                {/* Content Cards */}
+                {/* <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <div className="bg-white p-4 rounded-lg shadow-md hover:shadow-xl transition-shadow duration-300">
+                        <h2 className="text-xl font-semibold">Your Dashboard</h2>
+                        <p className="mt-2 text-gray-600">View your current rides, schedule, and earnings.</p>
+                        <button className="mt-4 py-2 px-4 bg-teal-500 text-white rounded-lg hover:bg-teal-600 transition-colors duration-200">Go to Dashboard</button>
+                    </div>
+
+                    <div className="bg-white p-4 rounded-lg shadow-md hover:shadow-xl transition-shadow duration-300">
+                        <h2 className="text-xl font-semibold">Settings</h2>
+                        <p className="mt-2 text-gray-600">Adjust your preferences and update your account information.</p>
+                        <button className="mt-4 py-2 px-4 bg-teal-500 text-white rounded-lg hover:bg-teal-600 transition-colors duration-200">Manage Settings</button>
+                    </div>
+
+                    <div className="bg-white p-4 rounded-lg shadow-md hover:shadow-xl transition-shadow duration-300">
+                        <h2 className="text-xl font-semibold">Profile</h2>
+                        <p className="mt-2 text-gray-600">Update your profile and driver details.</p>
+                        <button className="mt-4 py-2 px-4 bg-teal-500 text-white rounded-lg hover:bg-teal-600 transition-colors duration-200">Edit Profile</button>
+                    </div> */}
+
+
+                <div>
+                    <h1>Ride Requests</h1>
+                    {rideRequests.length > 0 ? (
+                        <ul className="space-y-4">
+                            {rideRequests.map((request) => {
+                                console.log(request);
+
+                                const distance = driverLocation
+                                    ? calculateDistance(
+                                        driverLocation.lat,
+                                        driverLocation.lng,
+                                        request.passengerLocation.lat,
+                                        request.passengerLocation.lng
+                                    ).toFixed(2)
+                                    : null;
+
+                                return (
+                                    <li key={request.id} className="border p-4 rounded shadow">
+                                        <p><strong>Passenger Name:</strong> {request.passengerName || "Unknown"}</p>
+                                        <p><strong>Passenger Location:</strong> {request.passengerLocation?.locationName || "Unknown"}</p>
+                                        {distance && (
+                                            <p><strong>Distance:</strong> {distance} km</p>
+                                        )}
+                                        <button
+                                            onClick={() => handleRequest(request.id, "accepted")}
+                                            className="bg-green-500 text-white py-2 px-4 rounded mt-2"
+                                        >
+                                            Accept
+                                        </button>
+                                        <button
+                                            onClick={() => handleRequest(request.id, "rejected")}
+                                            className="bg-red-500 text-white py-2 px-4 rounded mt-2 ml-2"
+                                        >
+                                            Reject
+                                        </button>
+                                    </li>
+                                );
+                            })}
+                        </ul>
                     ) : (
-                        <p>Loading your details...</p>
+                        <p>No ride requests at the moment.</p>
                     )}
                 </div>
 
-                {/* Ride Status Section */}
-                <div className="mt-6">
-                    <h3 className="text-xl text-gray-800 font-semibold">Current Ride Status</h3>
-                    <p className="text-lg text-gray-600 mt-2">{rideStatus}</p>
-                </div>
-
-                {/* Buttons */}
-                <div className="mt-8 space-x-4 flex justify-center">
-                    <button
-                        className="bg-green-500 text-white p-3 rounded-full w-32"
-                        onClick={handleAcceptRide}
-                    >
-                        Accept Ride
-                    </button>
-                    <button
-                        className="bg-red-500 text-white p-3 rounded-full w-32"
-                        onClick={handleEndRide}
-                    >
-                        End Ride
-                    </button>
-                </div>
-
-                {/* Sign Out Button */}
-                <div className="mt-6 text-center">
-                    <button
-                        className="bg-gray-500 text-white p-3 rounded-lg w-full"
-                        onClick={SignOut}
-                    >
-                        Sign Out
-                    </button>
-                </div>
             </div>
         </div>
     );
-};
-
-export default Driver;
+}
