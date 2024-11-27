@@ -41,7 +41,7 @@ export default function AuthContext({ children }) {
 
             // Navigate to the driver's dashboard
             const driverNameUrl = user.displayName.replace(/\s+/g, '-');
-            Navigate(`/driver/${driverNameUrl}`);
+            Navigate(`/driver/${driverNameUrl}`,{ replace: true });
             setMobile('')
         } catch (error) {
             console.error("Error signing in with Google:", error.message);
@@ -63,7 +63,7 @@ export default function AuthContext({ children }) {
                 // User exists, redirect to dashboard
                 console.log("User exists in Firestore");
                 const driverNameUrl = user.displayName.replace(/\s+/g, '-');
-                Navigate(`/driver/${driverNameUrl}`);
+                Navigate(`/driver/${driverNameUrl}`,{ replace: true });
             } else {
                 alert('Register first then try to Log-In')
                 Navigate(-1);
